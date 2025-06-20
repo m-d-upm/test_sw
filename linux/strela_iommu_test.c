@@ -27,7 +27,7 @@
 
 #define US_TO_CYCLES(t) (unsigned int)((t) * 1e-6 * 50e6)
 
-#define IMAGE_SIDE 64
+#define IMAGE_SIDE 32
 #define DATA_SIZE (IMAGE_SIDE * IMAGE_SIDE) // 1024
 #define RESULT_SIZE (IMAGE_SIDE * IMAGE_SIDE)
 
@@ -127,8 +127,6 @@ void test_conv2d();
 
 int main(void) 
 { 
-
-
     test_conv2d();
 
     return 0;
@@ -137,6 +135,7 @@ int main(void)
 void test_conv2d()
 {
     int file_desc = open(DEVICE_PATH, O_RDWR);
+
     if (file_desc < 0) {
         printf("Can't open device file: %s, error:%d\n", DEVICE_PATH, file_desc);
         exit(EXIT_FAILURE);
@@ -151,7 +150,8 @@ void test_conv2d()
     if (mmap_ptr == MAP_FAILED)
     {
         printf("MMAP FAILED\n");
-        goto error;
+        close(file_desc);
+        exit(EXIT_FAILURE);
     }
 
     printf("USER: VIRTUAL ADDR: %p \n", mmap_ptr);
@@ -216,7 +216,7 @@ void test_conv2d()
     if (ioctl(file_desc, IOCTL_STRELA_CONTROL, &cgra_ctrl1) != 0)
     {
         printf("ERROR: Setting up transfer 1!\n");
-        exit(-1);
+        goto error;
     }
 
     uint64_t end_setup_transf1 = micros();
@@ -230,7 +230,7 @@ void test_conv2d()
     if (ioctl(file_desc, IOCTL_STRELA_CONFIG) != 0)
     {
         printf("ERROR: Transfering config 1 to the device!\n");
-        exit(-1);
+        goto error;
     }
 
     uint64_t end_cgra_config1 = micros();
@@ -244,7 +244,7 @@ void test_conv2d()
     if (ioctl(file_desc, IOCTL_STRELA_EXEC) != 0)
     {
         printf("ERROR: Timeout while executing part 1!\n");
-        exit(-1);
+        goto error;
     }
 
     uint64_t end_cgra_exec1 = micros();
@@ -295,7 +295,7 @@ void test_conv2d()
     if (ioctl(file_desc, IOCTL_STRELA_CONTROL, &cgra_ctrl2) != 0)
     {
         printf("ERROR: Setting up transfer 2!\n");
-        exit(-1);
+        goto error;
     }
 
     uint64_t end_setup_transf2 = micros();
@@ -309,7 +309,7 @@ void test_conv2d()
     if (ioctl(file_desc, IOCTL_STRELA_CONFIG) != 0)
     {
         printf("ERROR: Transfering config 2 to the device!\n");
-        exit(-1);
+        goto error;
     }
 
     uint64_t end_cgra_config2 = micros();
@@ -323,7 +323,7 @@ void test_conv2d()
     if (ioctl(file_desc, IOCTL_STRELA_EXEC) != 0)
     {
         printf("ERROR: Timeout while executing part 2!\n");
-        exit(-1);
+        goto error;
     }
 
     uint64_t end_cgra_exec2 = micros();
@@ -361,7 +361,7 @@ void test_conv2d()
     if (ioctl(file_desc, IOCTL_STRELA_CONTROL, &cgra_ctrl3) != 0)
     {
         printf("ERROR: Setting up transfer 3!\n");
-        exit(-1);
+        goto error;
     }
 
     uint64_t end_setup_transf3 = micros();
@@ -377,7 +377,7 @@ void test_conv2d()
     if (ioctl(file_desc, IOCTL_STRELA_EXEC) != 0)
     {
         printf("ERROR: Timeout while executing part 3!\n");
-        exit(-1);
+        goto error;
     }
 
     uint64_t end_cgra_exec3 = micros();
@@ -466,8 +466,14 @@ void test_conv2d()
     b = micros();
     printf("Min: %d \n", US_TO_CYCLES(b - a));
 
+    munmap(mmap_ptr, STRELA_DATA_REGION_SIZE);
     close(file_desc);
 
+    exit(EXIT_SUCCESS);
+
 error:
+    munmap(mmap_ptr, STRELA_DATA_REGION_SIZE);
     close(file_desc);
+
+    exit(EXIT_FAILURE);
 }
