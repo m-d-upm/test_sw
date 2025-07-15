@@ -123,16 +123,7 @@ static int32_t image[DATA_SIZE] =
 static uint32_t result[DATA_SIZE];
 static uint32_t result_sw[DATA_SIZE];
 
-void test_conv2d();
-
-int main(void) 
-{ 
-    test_conv2d();
-
-    return 0;
-}
-
-void test_conv2d()
+void conv2d_test()
 {
     int file_desc = open(DEVICE_PATH, O_RDWR);
 
@@ -156,7 +147,7 @@ void test_conv2d()
 
     printf("USER: VIRTUAL ADDR: %p \n", mmap_ptr);
 
-    // Read input data befor write (Test cache flushing)
+    // Read input data befor write (test cache flushing)
     
     printf("OUTPUT before:\n");
 
@@ -469,7 +460,7 @@ void test_conv2d()
     munmap(mmap_ptr, STRELA_DATA_REGION_SIZE);
     close(file_desc);
 
-    exit(EXIT_SUCCESS);
+    return;
 
 error:
     munmap(mmap_ptr, STRELA_DATA_REGION_SIZE);

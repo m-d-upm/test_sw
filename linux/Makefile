@@ -8,7 +8,7 @@ CC = ../../cheshire/sw/deps/cva6-sdk/buildroot/output/host/bin/riscv64-buildroot
 
 INCLUDES = -I./
 
-SRCS_C = strela_iommu_test.c utilities.c
+SRCS_C = strela_iommu_test_main.c strela_iommu_relu_test.c strela_iommu_conv_test.c utilities.c
 
 OBJS_C = $(SRCS_C:.c=.o)
 
