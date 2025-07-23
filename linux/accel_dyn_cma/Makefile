@@ -2,13 +2,13 @@
 # after which the Linux image needs to be created first using buildroot
 # this will build the riscv64-buildroot-linux-gnu-gcc compiler as well
 # so that it can be used by this Makefile to build user programs
-CC = ../../cheshire/sw/deps/cva6-sdk/buildroot/output/host/bin/riscv64-buildroot-linux-gnu-gcc
+CC = ../../../cheshire/sw/deps/cva6-sdk/buildroot/output/host/bin/riscv64-buildroot-linux-gnu-gcc
 
 #CFLAGS = -Os -ggdb -Wall
 
-INCLUDES = -I./
+INCLUDES = -I./ -I../common/inc/
 
-SRCS_C = strela_iommu_test_main.c strela_iommu_relu_test.c strela_iommu_conv_test.c utilities.c
+SRCS_C = main.c accel_dyn_cma_test.c
 
 OBJS_C = $(SRCS_C:.c=.o)
 
