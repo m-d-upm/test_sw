@@ -85,25 +85,23 @@ void relu_test()
     };
 
     memset(buf_args_input.dev_name, 0, sizeof(buf_args_input.dev_name));
-    memcpy(buf_args_input.dev_name, "strela", sizeof("strela"));
+    memcpy(buf_args_input.dev_name, "1002000.strela", sizeof("1002000.strela") - 1);
 
     struct accel_dyn_cma_alloc_req_ioctl_arg buf_args_output = {
         .size = TRANSFER_SIZE * sizeof(int32_t),
         .id = -1,
-        .dev_name = "strela"
     };
 
     memset(buf_args_output.dev_name, 0, sizeof(buf_args_output.dev_name));
-    memcpy(buf_args_output.dev_name, "strela", sizeof("strela"));
+    memcpy(buf_args_output.dev_name, "1002000.strela", sizeof("1002000.strela") - 1);
 
     struct accel_dyn_cma_alloc_req_ioctl_arg buf_args_cfg = {
         .size = RELU_KRNL_SIZE * sizeof(uint32_t),
         .id = -1,
-        .dev_name = "strela"
     };
 
     memset(buf_args_cfg.dev_name, 0, sizeof(buf_args_cfg.dev_name));
-    memcpy(buf_args_cfg.dev_name, "strela", sizeof("strela"));
+    memcpy(buf_args_cfg.dev_name, "1002000.strela", sizeof("1002000.strela") - 1);
 
     if(ioctl(file_desc_alloc, ACCEL_DYN_CMA_IOCTL_ALLOC, &buf_args_input) != 0)
     {
