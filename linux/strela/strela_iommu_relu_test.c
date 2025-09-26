@@ -6,8 +6,8 @@
 // Milos Dordevic <milos.dordevic@upm.es>
 
 #include "strela.h" 
-#include "accel_dyn_cma.h" 
- 
+#include "cma.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
@@ -56,138 +56,46 @@ uint32_t relu_kernel[RELU_KRNL_SIZE] = {
 
 void relu_test()
 {
-    uint32_t *mmap_ptr_input = NULL;
-    uint32_t *mmap_ptr_result = NULL;
-    uint32_t *mmap_ptr_conf = NULL;
+    int32_t *input = NULL;
+    int32_t *result = NULL;
+    int32_t *conf = NULL;
 
     int file_desc_strela;
-    int file_desc_alloc;
     
-    file_desc_strela = open(DEVICE_PATH, O_RDWR);
+    file_desc_strela = open("/dev/strela1", O_RDWR);
 
     if (file_desc_strela < 0) {
-        printf("Can't open device file: %s, error:%d\n", DEVICE_PATH, file_desc_strela);
+        printf("Can't open device file: %s, error:%d\n", "/dev/strela1", file_desc_strela);
         goto error;
-    }
-
-    file_desc_alloc = open(ACCEL_DYN_CMA_DEV_NAME, O_RDWR);
-
-    if (file_desc_alloc < 0) {
-        printf("Can't open device file: %s, error:%d\n", ACCEL_DYN_CMA_DEV_NAME, file_desc_alloc);
-        goto error_alloc_open;
     }
 
     printf("\n---------\n");
 
-    struct accel_dyn_cma_alloc_req_ioctl_arg buf_args_input = {
-        .size = TRANSFER_SIZE * sizeof(int32_t),
-        .id = -1,
-    };
+    input = cma_alloc(TRANSFER_SIZE * sizeof(int32_t), "strela1");
 
-    memset(buf_args_input.dev_name, 0, sizeof(buf_args_input.dev_name));
-    memcpy(buf_args_input.dev_name, "1002000.strela", sizeof("1002000.strela") - 1);
-
-    struct accel_dyn_cma_alloc_req_ioctl_arg buf_args_output = {
-        .size = TRANSFER_SIZE * sizeof(int32_t),
-        .id = -1,
-    };
-
-    memset(buf_args_output.dev_name, 0, sizeof(buf_args_output.dev_name));
-    memcpy(buf_args_output.dev_name, "1002000.strela", sizeof("1002000.strela") - 1);
-
-    struct accel_dyn_cma_alloc_req_ioctl_arg buf_args_cfg = {
-        .size = RELU_KRNL_SIZE * sizeof(uint32_t),
-        .id = -1,
-    };
-
-    memset(buf_args_cfg.dev_name, 0, sizeof(buf_args_cfg.dev_name));
-    memcpy(buf_args_cfg.dev_name, "1002000.strela", sizeof("1002000.strela") - 1);
-
-    if(ioctl(file_desc_alloc, ACCEL_DYN_CMA_IOCTL_ALLOC, &buf_args_input) != 0)
+    if(!input)
     {
-        printf("ERROR: Failed to allocate buffer of size: %d bytes!\n", buf_args_input.size);
-        goto error_input_alloc;
+        goto error_mem_alloc;
     }
 
-    printf("Allocated buffer with size: %d bytes and ID: %d\n", buf_args_input.size, buf_args_input.id);
+    result = cma_alloc(TRANSFER_SIZE * sizeof(int32_t), "strela1");
 
-    if(ioctl(file_desc_alloc, ACCEL_DYN_CMA_IOCTL_ALLOC, &buf_args_output) != 0)
+    if(!result)
     {
-        printf("ERROR: Failed to allocate buffer of size: %d bytes!\n", buf_args_output.size);
-        goto error_output_alloc;
+        goto error_mem_alloc_res;
     }
 
-    printf("Allocated buffer with size: %d bytes and ID: %d\n", buf_args_output.size, buf_args_output.id);
+    conf = cma_alloc(RELU_KRNL_SIZE * sizeof(uint32_t), "strela1");
 
-    if(ioctl(file_desc_alloc, ACCEL_DYN_CMA_IOCTL_ALLOC, &buf_args_cfg) != 0)
+    if(!conf)
     {
-        printf("ERROR: Failed to allocate buffer of size: %d bytes!\n", buf_args_cfg.size);
-        goto error_cfg_alloc;
-    }
-
-    printf("Allocated buffer with size: %d bytes and ID: %d\n", buf_args_cfg.size, buf_args_cfg.id);
-
-    char buf_dev_name[32];
-
-    snprintf(buf_dev_name, sizeof(buf_dev_name), "/dev/udmabuf%d", buf_args_cfg.id);
-
-    int buf_cfg_fd = open(buf_dev_name, O_RDWR);
-
-    if (buf_cfg_fd < 0) {
-        printf("Can't open device file: %s, error:%d\n", buf_dev_name, buf_cfg_fd);
-        goto error_mmap;
-    }
-
-    // void *mmap(void addr[.length], size_t length, int prot, int flags, int fd, off_t offset);
-    // NULL: Kernel chooses address
-    mmap_ptr_conf = mmap(NULL, buf_args_cfg.size, PROT_READ | PROT_WRITE, MAP_SHARED, buf_cfg_fd, 0);
-
-    if (mmap_ptr_conf == MAP_FAILED)
-    {
-        printf("mmap for config buffer failed\n");
-        goto error_close_fd_buf_cfg;
-    }
-
-    snprintf(buf_dev_name, sizeof(buf_dev_name), "/dev/udmabuf%d", buf_args_input.id);
-
-    int buf_input_fd = open(buf_dev_name, O_RDWR);
-
-    if (buf_input_fd < 0) {
-        printf("Can't open device file: %s, error:%d\n", buf_dev_name, buf_input_fd);
-        goto error_close_fd_buf_cfg;
-    }
-
-    // void *mmap(void addr[.length], size_t length, int prot, int flags, int fd, off_t offset);
-    // NULL: Kernel chooses address
-    mmap_ptr_input = mmap(NULL, buf_args_input.size, PROT_READ | PROT_WRITE, MAP_SHARED, buf_input_fd, 0);
-
-    if (mmap_ptr_input == MAP_FAILED)
-    {
-        printf("mmap for input buffer failed\n");
-        goto error_close_fd_buf_in;
-    }
-
-    snprintf(buf_dev_name, sizeof(buf_dev_name), "/dev/udmabuf%d", buf_args_output.id);
-   
-    int buf_output_fd = open(buf_dev_name, O_RDWR);
-
-    if (buf_output_fd < 0) {
-        printf("Can't open device file: %s, error:%d\n", buf_dev_name, buf_output_fd);
-        goto error_close_fd_buf_in;
-    }
-
-    mmap_ptr_result = mmap(NULL, buf_args_output.size, PROT_READ | PROT_WRITE, MAP_SHARED, buf_output_fd, 0);
-
-    if (mmap_ptr_result == MAP_FAILED)
-    {
-        printf("mmap for result buffer failed\n");
-        goto error_close_fd_buf_out;
+        goto error_mem_alloc_conf;
     }
 
     // Populate input data
     for(int i = 0; i < TRANSFER_SIZE; i++)
     {
-        mmap_ptr_input[i] = i % 2 ? i : -i;
+        input[i] = i % 2 ? i : -i;
     }
 
     for(int i = 0; i < TRANSFER_SIZE; i++)
@@ -200,10 +108,10 @@ void relu_test()
 
     for(int i = 0; i < 20; i++)
     {
-        mmap_ptr_result[i] = 0xffffffff;
+        result[i] = 0xffffffff;
     }
 
-    examine_mem(mmap_ptr_result, 0, 20);
+    examine_mem(result, 0, 20);
 
     // Copy config to buffer
     uint32_t *cgra_kernel = relu_kernel;
@@ -213,7 +121,7 @@ void relu_test()
 
     uint64_t begin_write_config = micros();
 
-    memcpy(mmap_ptr_conf, cgra_kernel, cgra_kernel_size_words * sizeof(uint32_t));
+    memcpy(conf, cgra_kernel, cgra_kernel_size_words * sizeof(uint32_t));
 
     uint64_t end_write_config = micros();
 
@@ -223,8 +131,8 @@ void relu_test()
 
     struct strela_ctrl cgra_ctrl = {0};
 
-    cgra_ctrl.in_buf_id = buf_args_cfg.id;
-    cgra_ctrl.out_buf_id = buf_args_cfg.id;
+    cgra_ctrl.in_buf_id = cma_get_buff_id(conf);
+    cgra_ctrl.out_buf_id = cma_get_buff_id(conf);
     
     cgra_ctrl.csrs.conf_offs = 0;
     cgra_ctrl.csrs.conf_count = cgra_kernel_size_words;
@@ -232,7 +140,7 @@ void relu_test()
     if (ioctl(file_desc_strela, IOCTL_STRELA_CONTROL, &cgra_ctrl) != 0)
     {
         printf("ERROR: Setting up config transfer!\n");
-        goto error_close_fd_buf_out;
+        goto error_strela_ioctl;
     }
 
     uint64_t end_cfg_setup_transf = micros();
@@ -246,7 +154,7 @@ void relu_test()
     if (ioctl(file_desc_strela, IOCTL_STRELA_CONFIG) != 0)
     {
         printf("ERROR: Transfering config to the device!\n");
-        goto error_close_fd_buf_out;
+        goto error_strela_ioctl;
     }
 
     uint64_t end_cgra_config = micros();
@@ -255,8 +163,8 @@ void relu_test()
 
     uint64_t begin_setup_transf = micros();
 
-    cgra_ctrl.in_buf_id = buf_args_input.id;
-    cgra_ctrl.out_buf_id = buf_args_output.id;
+    cgra_ctrl.in_buf_id = cma_get_buff_id(input);
+    cgra_ctrl.out_buf_id = cma_get_buff_id(result);
     
     cgra_ctrl.csrs.conf_offs = 0;
     cgra_ctrl.csrs.conf_count = 0;
@@ -271,7 +179,7 @@ void relu_test()
     if (ioctl(file_desc_strela, IOCTL_STRELA_CONTROL, &cgra_ctrl) != 0)
     {
         printf("ERROR: Setting up transfer!\n");
-        goto error_close_fd_buf_out;
+        goto error_strela_ioctl;
     }
 
     uint64_t end_setup_transf = micros();
@@ -284,7 +192,7 @@ void relu_test()
     if (ioctl(file_desc_strela, IOCTL_STRELA_EXEC) != 0)
     {
         printf("ERROR: Timeout while executing!\n");
-        goto error_close_fd_buf_out;
+        goto error_strela_ioctl;
     }
 
     uint64_t end_cgra_exec = micros();
@@ -301,10 +209,10 @@ void relu_test()
     uint64_t end_sw = micros();
 
     printf("Input (first 20 elements) -----------\n");
-    examine_mem(mmap_ptr_input, 0, 20);
+    examine_mem(input, 0, 20);
 
     printf("Output CGRA (first 20 elements) -----------\n");
-    examine_mem(mmap_ptr_result, 0, 20);
+    examine_mem(result, 0, 20);
 
     printf("Output SW (CPU) (first 20 elements) -----------\n");
     examine_mem(output_data_sw, 0, 20);
@@ -337,65 +245,20 @@ void relu_test()
     b = micros();
     printf("Min (cycles): %d\n", US_TO_CYCLES(b - a));
 
-    munmap(mmap_ptr_input, buf_args_input.size);
-    munmap(mmap_ptr_result, buf_args_output.size);
-    munmap(mmap_ptr_conf, buf_args_cfg.size);
-
-    close(buf_cfg_fd);
-    close(buf_input_fd);
-    close(buf_output_fd);
-
-    if(ioctl(file_desc_alloc, ACCEL_DYN_CMA_IOCTL_FREE, &buf_args_cfg.id) != 0)
-    {
-        printf("ERROR: Failed to deallocate buffer with ID: %d!\n", buf_args_cfg.id);
-        goto error_cfg_alloc;
-    }
+    cma_free(input);
+    cma_free(result);
+    cma_free(conf);
     
-    if(ioctl(file_desc_alloc, ACCEL_DYN_CMA_IOCTL_FREE, &buf_args_output.id) != 0)
-    {
-        printf("ERROR: Failed to deallocate buffer with ID: %d!\n", buf_args_output.id);
-        goto error_output_alloc;
-    }
-
-    if(ioctl(file_desc_alloc, ACCEL_DYN_CMA_IOCTL_FREE, &buf_args_input.id) != 0)
-    {
-        printf("ERROR: Failed to deallocate buffer with ID: %d!\n", buf_args_input.id);
-        goto error_input_alloc;
-    }
-
     close(file_desc_strela);
-    close(file_desc_alloc);
-
+    
     return;
 
-error_close_fd_buf_out:
-    munmap(mmap_ptr_result, buf_args_output.size);
-error_close_fd_buf_in:
-    munmap(mmap_ptr_input, buf_args_input.size);
-error_close_fd_buf_cfg:
-    munmap(mmap_ptr_conf, buf_args_cfg.size);
-error_mmap:
-    if(ioctl(file_desc_alloc, ACCEL_DYN_CMA_IOCTL_FREE, &buf_args_input.id) != 0)
-    {
-        printf("ERROR: Failed to deallocate buffer with ID: %d!\n", buf_args_input.id);
-    }
-error_cfg_alloc:
-    if(ioctl(file_desc_alloc, ACCEL_DYN_CMA_IOCTL_FREE, &buf_args_output.id) != 0)
-    {
-        printf("ERROR: Failed to deallocate buffer with ID: %d!\n", buf_args_output.id);
-    }
-error_output_alloc:
-    if(ioctl(file_desc_alloc, ACCEL_DYN_CMA_IOCTL_FREE, &buf_args_input.id) != 0)
-    {
-        printf("ERROR: Failed to deallocate buffer with ID: %d!\n", buf_args_input.id);
-    }
-error_input_alloc:
-    munmap(mmap_ptr_input, buf_args_input.size);
-    munmap(mmap_ptr_result, buf_args_output.size);
-    munmap(mmap_ptr_conf, buf_args_cfg.size);
-
-    close(file_desc_alloc);
-error_alloc_open:
+error_strela_ioctl:
+error_mem_alloc_conf:
+    cma_free(result);
+error_mem_alloc_res:
+    cma_free(input);
+error_mem_alloc:
     close(file_desc_strela);
 error:
     exit(EXIT_FAILURE);
