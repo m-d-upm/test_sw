@@ -6,10 +6,10 @@ CC = ../../../cheshire/sw/deps/cva6-sdk/buildroot/output/host/bin/riscv64-buildr
 
 #CFLAGS = -Os -ggdb -Wall
 
-INCLUDES = -I./ -I../common/inc/
+INCLUDES = -I./ -I../common/inc/ -I../lib
 
 #SRCS_C = strela_iommu_test_main.c strela_iommu_relu_test.c strela_iommu_conv_test.c ../common/utilities.c
-SRCS_C = strela_iommu_test_main.c strela_iommu_relu_test.c ../common/utilities.c
+SRCS_C = strela_iommu_test_main.c strela_iommu_relu_test.c ../common/utilities.c ../lib/cma.c
 
 OBJS_C = $(SRCS_C:.c=.o)
 
