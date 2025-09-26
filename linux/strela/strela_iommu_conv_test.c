@@ -6,7 +6,8 @@
 // Milos Dordevic <milos.dordevic@upm.es>
 
 #include "strela.h" 
- 
+#include "cma.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
@@ -21,9 +22,10 @@
 
 #include "utilities.h"
 
-#define CONFIG_OFFSET 0
+#define CONFIG_OFFSET   (0)
 #define INPUT_OFFSET    (0x10000/4)
 #define OUTPUT_OFFSET   (0x20000/4)
+#define BUFFER_SIZE     (0x400000) // 4 MB
 
 #define US_TO_CYCLES(t) (unsigned int)((t) * 1e-6 * 50e6)
 
@@ -52,7 +54,7 @@ extern uint32_t conv2d_1_kernel[CONV2D_1_KRNL_SIZE];
 #define CONV2D_2_KRNL_SIZE CONV2D_2_KRNL_NPE * 5
 #define CONV2D_2_KRNL_BYTES CONV2D_2_KRNL_SIZE * 4
 
-static uint32_t *mmap_ptr = NULL;
+static uint32_t *buffer = NULL;
 
 uint32_t conv2d_1_kernel[CONV2D_1_KRNL_SIZE] = {
     0xC0000020, 0x00202200, 0x00000000, 0x00000000, 0xC5000000, // 0
@@ -125,27 +127,25 @@ static uint32_t result_sw[DATA_SIZE];
 
 void conv2d_test()
 {
-    int file_desc = open(DEVICE_PATH, O_RDWR);
+    int32_t *buffer = NULL;
+
+    int file_desc = open("strela0", O_RDWR);
 
     if (file_desc < 0) {
-        printf("Can't open device file: %s, error:%d\n", DEVICE_PATH, file_desc);
+        printf("Can't open device file: %s, error:%d\n", "strela0", file_desc);
         exit(EXIT_FAILURE);
     }
 
     printf("\n---------\n");
 
-    // void *mmap(void addr[.length], size_t length, int prot, int flags, int fd, off_t offset);
-    // NULL: Kernel chooses address
-    mmap_ptr = mmap(NULL, STRELA_DATA_REGION_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, file_desc, 0);
+    buffer = cma_alloc(BUFFER_SIZE * sizeof(int32_t), "strela0");
 
-    if (mmap_ptr == MAP_FAILED)
+    if(!buffer)
     {
-        printf("MMAP FAILED\n");
-        close(file_desc);
-        exit(EXIT_FAILURE);
+        goto error_mem_alloc;
     }
 
-    printf("USER: VIRTUAL ADDR: %p \n", mmap_ptr);
+    printf("USER: VIRTUAL ADDR: %p \n", buffer);
 
     // Read input data befor write (test cache flushing)
     
@@ -153,15 +153,15 @@ void conv2d_test()
 
     for(int i = 0; i< 20; i++)
     {
-        *(mmap_ptr + OUTPUT_OFFSET + i) = 0xffffffff;
+        *(buffer + OUTPUT_OFFSET + i) = 0xffffffff;
     }
     
-    examine_mem(mmap_ptr, OUTPUT_OFFSET, 20);
+    examine_mem(buffer, OUTPUT_OFFSET, 20);
 
     // Copy image to buffer
     uint64_t begin_write_image = micros();
 
-    memcpy((mmap_ptr + INPUT_OFFSET), image, DATA_SIZE * sizeof(uint32_t));
+    memcpy((buffer + INPUT_OFFSET), image, DATA_SIZE * sizeof(uint32_t));
 
     uint64_t end_write_image = micros();
 
@@ -174,7 +174,7 @@ void conv2d_test()
     uint32_t *cgra_kernel = conv2d_1_kernel;
     uint32_t cgra_kernel_size_words = CONV2D_1_KRNL_SIZE;
 
-    memcpy((mmap_ptr + CONFIG_OFFSET), cgra_kernel, cgra_kernel_size_words * sizeof(uint32_t));
+    memcpy((buffer + CONFIG_OFFSET), cgra_kernel, cgra_kernel_size_words * sizeof(uint32_t));
 
     uint64_t end_write_config1 = micros();
 
@@ -184,25 +184,28 @@ void conv2d_test()
 
     uint64_t begin_setup_transf1 = micros();
 
-    struct strela_csrs cgra_ctrl1 = {0};
+    struct strela_ctrl cgra_ctrl1 = {0};
 
-    cgra_ctrl1.conf_offs = CONFIG_OFFSET;
-    cgra_ctrl1.conf_count = cgra_kernel_size_words;
+    cgra_ctrl1.in_buf_id = cma_get_buff_id(buffer);
+    cgra_ctrl1.out_buf_id = cma_get_buff_id(buffer);
 
-    cgra_ctrl1.in0_offs = INPUT_OFFSET + 0;
-    cgra_ctrl1.in0_count = WRITE_RESULT_SIZE;
-    cgra_ctrl1.in0_stride = 4;
+    cgra_ctrl1.csrs.conf_offs = CONFIG_OFFSET;
+    cgra_ctrl1.csrs.conf_count = cgra_kernel_size_words;
 
-    cgra_ctrl1.in1_offs = INPUT_OFFSET + 1;
-    cgra_ctrl1.in1_count = WRITE_RESULT_SIZE;
-    cgra_ctrl1.in1_stride = 4;
+    cgra_ctrl1.csrs.in0_offs = INPUT_OFFSET + 0;
+    cgra_ctrl1.csrs.in0_count = WRITE_RESULT_SIZE;
+    cgra_ctrl1.csrs.in0_stride = 4;
 
-    cgra_ctrl1.in2_offs = INPUT_OFFSET + 2;
-    cgra_ctrl1.in2_count = WRITE_RESULT_SIZE;
-    cgra_ctrl1.in2_stride = 4;
+    cgra_ctrl1.csrs.in1_offs = INPUT_OFFSET + 1;
+    cgra_ctrl1.csrs.in1_count = WRITE_RESULT_SIZE;
+    cgra_ctrl1.csrs.in1_stride = 4;
 
-    cgra_ctrl1.out2_offs = OUTPUT_OFFSET + WRITE_RESULT_OFFSET;
-    cgra_ctrl1.out2_count = WRITE_RESULT_SIZE;
+    cgra_ctrl1.csrs.in2_offs = INPUT_OFFSET + 2;
+    cgra_ctrl1.csrs.in2_count = WRITE_RESULT_SIZE;
+    cgra_ctrl1.csrs.in2_stride = 4;
+
+    cgra_ctrl1.csrs.out2_offs = OUTPUT_OFFSET + WRITE_RESULT_OFFSET;
+    cgra_ctrl1.csrs.out2_count = WRITE_RESULT_SIZE;
 
     if (ioctl(file_desc, IOCTL_STRELA_CONTROL, &cgra_ctrl1) != 0)
     {
@@ -249,7 +252,7 @@ void conv2d_test()
     cgra_kernel = conv2d_2_kernel;
     cgra_kernel_size_words = CONV2D_2_KRNL_SIZE;
 
-    memcpy((mmap_ptr + CONFIG_OFFSET), cgra_kernel, cgra_kernel_size_words * sizeof(uint32_t));
+    memcpy((buffer + CONFIG_OFFSET), cgra_kernel, cgra_kernel_size_words * sizeof(uint32_t));
 
     uint64_t end_write_config2 = micros();
 
@@ -259,29 +262,32 @@ void conv2d_test()
 
     uint64_t begin_setup_transf2 = micros();
 
-    struct strela_csrs cgra_ctrl2 = {0};
+    struct strela_ctrl cgra_ctrl2 = {0};
 
-    cgra_ctrl2.conf_offs = CONFIG_OFFSET;
-    cgra_ctrl2.conf_count = cgra_kernel_size_words;
+    cgra_ctrl2.in_buf_id = cma_get_buff_id(buffer);
+    cgra_ctrl2.out_buf_id = cma_get_buff_id(buffer);
+    
+    cgra_ctrl2.csrs.conf_offs = CONFIG_OFFSET;
+    cgra_ctrl2.csrs.conf_count = cgra_kernel_size_words;
 
-    cgra_ctrl2.in0_offs = INPUT_OFFSET + (IMAGE_SIDE + 0);
-    cgra_ctrl2.in0_count = WRITE_RESULT_SIZE;
-    cgra_ctrl2.in0_stride = 4;
+    cgra_ctrl2.csrs.in0_offs = INPUT_OFFSET + (IMAGE_SIDE + 0);
+    cgra_ctrl2.csrs.in0_count = WRITE_RESULT_SIZE;
+    cgra_ctrl2.csrs.in0_stride = 4;
 
-    cgra_ctrl2.in1_offs = INPUT_OFFSET + (IMAGE_SIDE + 1);
-    cgra_ctrl2.in1_count = WRITE_RESULT_SIZE;
-    cgra_ctrl2.in1_stride = 4;
+    cgra_ctrl2.csrs.in1_offs = INPUT_OFFSET + (IMAGE_SIDE + 1);
+    cgra_ctrl2.csrs.in1_count = WRITE_RESULT_SIZE;
+    cgra_ctrl2.csrs.in1_stride = 4;
 
-    cgra_ctrl2.in2_offs = INPUT_OFFSET + (IMAGE_SIDE + 2);
-    cgra_ctrl2.in2_count = WRITE_RESULT_SIZE;
-    cgra_ctrl2.in2_stride = 4;
+    cgra_ctrl2.csrs.in2_offs = INPUT_OFFSET + (IMAGE_SIDE + 2);
+    cgra_ctrl2.csrs.in2_count = WRITE_RESULT_SIZE;
+    cgra_ctrl2.csrs.in2_stride = 4;
 
-    cgra_ctrl2.in3_offs = OUTPUT_OFFSET + WRITE_RESULT_OFFSET;
-    cgra_ctrl2.in3_count = WRITE_RESULT_SIZE;
-    cgra_ctrl2.in3_stride = 4;
+    cgra_ctrl2.csrs.in3_offs = OUTPUT_OFFSET + WRITE_RESULT_OFFSET;
+    cgra_ctrl2.csrs.in3_count = WRITE_RESULT_SIZE;
+    cgra_ctrl2.csrs.in3_stride = 4;
 
-    cgra_ctrl2.out3_offs = OUTPUT_OFFSET + WRITE_RESULT_OFFSET;
-    cgra_ctrl2.out3_count = WRITE_RESULT_SIZE;
+    cgra_ctrl2.csrs.out3_offs = OUTPUT_OFFSET + WRITE_RESULT_OFFSET;
+    cgra_ctrl2.csrs.out3_count = WRITE_RESULT_SIZE;
 
     if (ioctl(file_desc, IOCTL_STRELA_CONTROL, &cgra_ctrl2) != 0)
     {
@@ -325,29 +331,32 @@ void conv2d_test()
 
     uint64_t begin_setup_transf3 = micros();
 
-    struct strela_csrs cgra_ctrl3 = { 0 };
+    struct strela_ctrl cgra_ctrl3 = { 0 };
 
-    cgra_ctrl3.conf_offs = CONFIG_OFFSET;
-    cgra_ctrl3.conf_count = cgra_kernel_size_words;
+    cgra_ctrl3.in_buf_id = cma_get_buff_id(buffer);
+    cgra_ctrl3.out_buf_id = cma_get_buff_id(buffer);
 
-    cgra_ctrl3.in0_offs = INPUT_OFFSET + (2 * IMAGE_SIDE + 0);
-    cgra_ctrl3.in0_count = WRITE_RESULT_SIZE;
-    cgra_ctrl3.in0_stride = 4;
+    cgra_ctrl3.csrs.conf_offs = CONFIG_OFFSET;
+    cgra_ctrl3.csrs.conf_count = cgra_kernel_size_words;
 
-    cgra_ctrl3.in1_offs = INPUT_OFFSET + (2 * IMAGE_SIDE + 1);
-    cgra_ctrl3.in1_count = WRITE_RESULT_SIZE;
-    cgra_ctrl3.in1_stride = 4;
+    cgra_ctrl3.csrs.in0_offs = INPUT_OFFSET + (2 * IMAGE_SIDE + 0);
+    cgra_ctrl3.csrs.in0_count = WRITE_RESULT_SIZE;
+    cgra_ctrl3.csrs.in0_stride = 4;
 
-    cgra_ctrl3.in2_offs = INPUT_OFFSET + (2 * IMAGE_SIDE + 2);
-    cgra_ctrl3.in2_count = WRITE_RESULT_SIZE;
-    cgra_ctrl3.in2_stride = 4;
+    cgra_ctrl3.csrs.in1_offs = INPUT_OFFSET + (2 * IMAGE_SIDE + 1);
+    cgra_ctrl3.csrs.in1_count = WRITE_RESULT_SIZE;
+    cgra_ctrl3.csrs.in1_stride = 4;
 
-    cgra_ctrl3.in3_offs = OUTPUT_OFFSET + WRITE_RESULT_OFFSET;
-    cgra_ctrl3.in3_count = WRITE_RESULT_SIZE;
-    cgra_ctrl3.in3_stride = 4;
+    cgra_ctrl3.csrs.in2_offs = INPUT_OFFSET + (2 * IMAGE_SIDE + 2);
+    cgra_ctrl3.csrs.in2_count = WRITE_RESULT_SIZE;
+    cgra_ctrl3.csrs.in2_stride = 4;
 
-    cgra_ctrl3.out3_offs = OUTPUT_OFFSET + WRITE_RESULT_OFFSET;
-    cgra_ctrl3.out3_count = WRITE_RESULT_SIZE;
+    cgra_ctrl3.csrs.in3_offs = OUTPUT_OFFSET + WRITE_RESULT_OFFSET;
+    cgra_ctrl3.csrs.in3_count = WRITE_RESULT_SIZE;
+    cgra_ctrl3.csrs.in3_stride = 4;
+
+    cgra_ctrl3.csrs.out3_offs = OUTPUT_OFFSET + WRITE_RESULT_OFFSET;
+    cgra_ctrl3.csrs.out3_count = WRITE_RESULT_SIZE;
 
     if (ioctl(file_desc, IOCTL_STRELA_CONTROL, &cgra_ctrl3) != 0)
     {
@@ -378,7 +387,7 @@ void conv2d_test()
     // Copy output data from buffer
     uint64_t begin_read_result = micros();
 
-    memcpy(result, (mmap_ptr + OUTPUT_OFFSET), DATA_SIZE * sizeof(uint32_t));
+    memcpy(result, (buffer + OUTPUT_OFFSET), DATA_SIZE * sizeof(uint32_t));
 
     uint64_t end_read_result = micros();
 
@@ -403,7 +412,7 @@ void conv2d_test()
     uint64_t end_sw = micros();
 
     printf("STRELA:\n");
-    examine_mem(mmap_ptr, OUTPUT_OFFSET + IMAGE_SIDE + 1, 20);
+    examine_mem(buffer, OUTPUT_OFFSET + IMAGE_SIDE + 1, 20);
 
     printf("CPU:\n");
     examine_mem(result_sw, IMAGE_SIDE + 1, 20);
@@ -457,13 +466,14 @@ void conv2d_test()
     b = micros();
     printf("Min: %d \n", US_TO_CYCLES(b - a));
 
-    munmap(mmap_ptr, STRELA_DATA_REGION_SIZE);
+    cma_free(buffer);
     close(file_desc);
 
     return;
 
 error:
-    munmap(mmap_ptr, STRELA_DATA_REGION_SIZE);
+    cma_free(buffer);
+error_mem_alloc:
     close(file_desc);
 
     exit(EXIT_FAILURE);
