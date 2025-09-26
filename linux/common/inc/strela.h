@@ -10,7 +10,7 @@
 
 #include <stdint.h>
 
-#define DEVICE_PATH ("/dev/strela")
+#define BASE_DEVICE_PATH ("/dev/strela")
 
 #define STRELA_CTRL_BIT_START_EXEC    	(0x1U)
 #define STRELA_CTRL_BIT_CLEAR_STATE   	(0x2U)
