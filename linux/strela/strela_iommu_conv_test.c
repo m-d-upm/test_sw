@@ -129,7 +129,7 @@ void conv2d_test()
 {
     int32_t *buffer = NULL;
 
-    int file_desc = open("strela0", O_RDWR);
+    int file_desc = open("/dev/strela0", O_RDWR);
 
     if (file_desc < 0) {
         printf("Can't open device file: %s, error:%d\n", "strela0", file_desc);
