@@ -24,7 +24,7 @@
 
 #define GLOB_PATTERN                    ("sys/devices/platform/soc/*.strela/misc/strela*")
 #define DELIMITER                       ("/")
-#define MAX_NUM_OF_SUPP_DEVS            (8)
+#define MAX_NUM_OF_SUPP_BUFF_MAPPINGS   (256)
 #define DEV_MAPPING_MATCH_NOT_FOUND     (-1)
 #define DEV_MAPPING_MATCH_FOUND         (-2)
 
@@ -37,7 +37,7 @@ struct dev_mapping
 struct dev_mappings
 {
     bool initialized;
-    struct dev_mapping map[MAX_NUM_OF_SUPP_DEVS];
+    struct dev_mapping map[MAX_NUM_OF_SUPP_BUFF_MAPPINGS];
 };
 
 struct buf_ptr_id_mapping
@@ -47,7 +47,7 @@ struct buf_ptr_id_mapping
 };
 
 static struct dev_mappings dev_name_map = { 0 }; 
-static struct buf_ptr_id_mapping buf_ptr_id_map[MAX_NUM_OF_SUPP_DEVS]; // ID is equal to index
+static struct buf_ptr_id_mapping buf_ptr_id_map[MAX_NUM_OF_SUPP_BUFF_MAPPINGS]; // ID is equal to index
 static uint32_t buf_id_cnt = 0;
 
 static int init_dev_mappings(void)
@@ -79,7 +79,7 @@ static int init_dev_mappings(void)
 
                 ++index;
 
-                if(index >= MAX_NUM_OF_SUPP_DEVS)
+                if(index >= MAX_NUM_OF_SUPP_BUFF_MAPPINGS)
                     break;
             }
         }
@@ -121,7 +121,7 @@ void *cma_alloc(uint32_t size, const char* dev_name)
 
     int num_chars = strlen(dev_name) > sizeof(buf_args_input.dev_name) ? sizeof(buf_args_input.dev_name) : strlen(dev_name);
 
-    for (int i = 0; i < MAX_NUM_OF_SUPP_DEVS; i++)
+    for (int i = 0; i < MAX_NUM_OF_SUPP_BUFF_MAPPINGS; i++)
     {
         if(!strncmp(dev_name_map.map[i].dev_name, dev_name, num_chars))
         {
@@ -185,7 +185,7 @@ void cma_free(void *ptr)
     {
         int id = -1;
 
-        for (int i = 0; i < MAX_NUM_OF_SUPP_DEVS; i++)
+        for (int i = 0; i < MAX_NUM_OF_SUPP_BUFF_MAPPINGS; i++)
         {
             if(buf_ptr_id_map[i].ptr == ptr)
             {
@@ -220,7 +220,7 @@ int cma_get_buff_id(void* ptr)
 {
     int id = -1;
 
-    for (int i = 0; i < MAX_NUM_OF_SUPP_DEVS; i++)
+    for (int i = 0; i < MAX_NUM_OF_SUPP_BUFF_MAPPINGS; i++)
     {
         if(buf_ptr_id_map[i].ptr == ptr)
         {
