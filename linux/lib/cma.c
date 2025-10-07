@@ -18,7 +18,7 @@
 #include <sys/mman.h> // mmap()
 #include <glob.h>
 #include <stdbool.h>
-
+#include <pthread.h>
 
 #include <stdio.h>
 
@@ -49,6 +49,7 @@ struct buf_ptr_id_mapping
 static struct dev_mappings dev_name_map = { 0 }; 
 static struct buf_ptr_id_mapping buf_ptr_id_map[MAX_NUM_OF_SUPP_BUFF_MAPPINGS]; // ID is equal to index
 static uint32_t buf_id_cnt = 0;
+static pthread_mutex_t lib_mutex;
 
 static int init_dev_mappings(void)
 {
@@ -105,6 +106,8 @@ void *cma_alloc(uint32_t size, const char* dev_name)
         .size = size,
         .id = DEV_MAPPING_MATCH_NOT_FOUND,
     };
+
+    pthread_mutex_lock(&lib_mutex);
 
     if(!dev_name_map.initialized)
     {
@@ -167,6 +170,8 @@ void *cma_alloc(uint32_t size, const char* dev_name)
     close(buf_input_fd);
     close(file_desc_alloc);
 
+    pthread_mutex_unlock(&lib_mutex);
+
     return buff_ptr;
 
 error_udmabuf_mmap:
@@ -176,11 +181,15 @@ error_cma_iotcl:
 error_dev_name_match_not_found:
     close(file_desc_alloc);
     
+    pthread_mutex_unlock(&lib_mutex);
+
     return NULL;
 }
 
 void cma_free(void *ptr)
 {   
+    pthread_mutex_lock(&lib_mutex);
+
     if((buf_id_cnt > 0) && (ptr))
     {
         int id = -1;
@@ -214,11 +223,15 @@ void cma_free(void *ptr)
             close(file_desc_alloc);
         }
     }
+
+    pthread_mutex_unlock(&lib_mutex);
 }
 
 int cma_get_buff_id(void* ptr)
 {
     int id = -1;
+
+    pthread_mutex_lock(&lib_mutex);
 
     for (int i = 0; i < MAX_NUM_OF_SUPP_BUFF_MAPPINGS; i++)
     {
@@ -228,6 +241,8 @@ int cma_get_buff_id(void* ptr)
             break;
         } 
     }
+
+    pthread_mutex_unlock(&lib_mutex);
 
     return id;
 }
