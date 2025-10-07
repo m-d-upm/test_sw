@@ -62,30 +62,30 @@ void relu_test()
 
     int file_desc_strela;
     
-    file_desc_strela = open("/dev/strela1", O_RDWR);
+    file_desc_strela = open("/dev/strela0", O_RDWR);
 
     if (file_desc_strela < 0) {
-        printf("Can't open device file: %s, error:%d\n", "/dev/strela1", file_desc_strela);
+        printf("Can't open device file: %s, error:%d\n", "/dev/strela0", file_desc_strela);
         goto error;
     }
 
     printf("\n---------\n");
 
-    input = cma_alloc(TRANSFER_SIZE * sizeof(int32_t), "strela1");
+    input = cma_alloc(TRANSFER_SIZE * sizeof(int32_t), "strela0");
 
     if(!input)
     {
         goto error_mem_alloc;
     }
 
-    result = cma_alloc(TRANSFER_SIZE * sizeof(int32_t), "strela1");
+    result = cma_alloc(TRANSFER_SIZE * sizeof(int32_t), "strela0");
 
     if(!result)
     {
         goto error_mem_alloc_res;
     }
 
-    conf = cma_alloc(RELU_KRNL_SIZE * sizeof(uint32_t), "strela1");
+    conf = cma_alloc(RELU_KRNL_SIZE * sizeof(uint32_t), "strela0");
 
     if(!conf)
     {

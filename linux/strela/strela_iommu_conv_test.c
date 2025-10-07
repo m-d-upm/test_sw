@@ -129,16 +129,16 @@ void conv2d_test()
 {
     int32_t *buffer = NULL;
 
-    int file_desc = open("/dev/strela0", O_RDWR);
+    int file_desc = open("/dev/strela1", O_RDWR);
 
     if (file_desc < 0) {
-        printf("Can't open device file: %s, error:%d\n", "strela0", file_desc);
+        printf("Can't open device file: %s, error:%d\n", "strela1", file_desc);
         exit(EXIT_FAILURE);
     }
 
     printf("\n---------\n");
 
-    buffer = cma_alloc(BUFFER_SIZE * sizeof(int32_t), "strela0");
+    buffer = cma_alloc(BUFFER_SIZE * sizeof(int32_t), "strela1");
 
     if(!buffer)
     {
